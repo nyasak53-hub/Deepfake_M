@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepfakeMed: Medical Image Forgery Detector</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        /* ------------------------------------------------------------------
+           THEME VARIABLES & GLASSMORPHISM SETUP
+        ------------------------------------------------------------------- */
+        :root {
+            /* Default Dark Theme Variables */
+            --bg-main: #0a0d16;
+            --bg-sidebar: rgba(15, 22, 38, 0.75);
+            --bg-card: rgba(22, 32, 54, 0.55);
+            --bg-card-hover: rgba(30, 44, 74, 0.75);
+            --border-dark: rgba(255, 255, 255, 0.1);
+            --border-dashed: rgba(56, 189, 248, 0.3);
+            --text-primary: #ffffff;
+            --text-secondary: #9daec8;
+            --accent-blue: #0088ff;
+            --accent-cyan: #38bdf8;
+            --status-bg: rgba(17, 34, 63, 0.6);
+            --status-border: rgba(29, 78, 216, 0.6);
+            --status-text: #60a5fa;
+            --glass-blur: blur(16px);
+            --shadow-glow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            --input-bg: rgba(10, 14, 23, 0.6);
+            --badge-bg: rgba(13, 17, 29, 0.85);
+        }
+
+        [data-theme="light"] {
+            /* Light Theme Overrides */
+            --bg-main: #f0f4f9;
+            --bg-sidebar: rgba(255, 255, 255, 0.8);
+            --bg-card: rgba(255, 255, 255, 0.7);
+            --bg-card-hover: rgba(255, 255, 255, 0.9);
+            --border-dark: rgba(0, 0, 0, 0.08);
+            --border-dashed: rgba(0, 136, 255, 0.4);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --status-bg: rgba(219, 234, 254, 0.7);
+            --status-border: rgba(147, 197, 253, 0.8);
+            --status-text: #1e40af;
+            --shadow-glow: 0 8px 30px 0 rgba(31, 38, 135, 0.07);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --badge-bg: rgba(255, 255, 255, 0.9);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+            transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 10% 10%, rgba(0, 136, 255, 0.08) 0px, transparent 50%),
+                radial-gradient(at 90% 90%, rgba(56, 189, 248, 0.08) 0px, transparent 50%);
+        }
+
+       /* 3D Canvas Styling */
+        #3d-canvas-holder canvas {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+}   
+
+        /* --- COMPARISON SLIDER STYLES --- */
+        .comparison-wrapper {
+        position: relative;
+        width: 100%;
+        height: 420px;
+        border-radius: 10px;
+        overflow: hidden;
+        background-color: #000;
+        border: 1px solid var(--border-dark);
+        box-shadow: var(--shadow-glow);
+        user-select: none;
+        }
+
+        .comparison-image {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        }
+
+        .comparison-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 50%; /* Default starting split position */
+        overflow: hidden;
+        z-index: 2;
+        }
+
+        .comparison-overlay canvas {
+        height: 100%;
+        display: block;
+        }
+
+        .slider-handle {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 4px;
+        background: var(--accent-cyan);
+        cursor: ew-resize;
+        z-index: 3;
+        box-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        .slider-handle::after {
+        content: "↔";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 32px;
+        height: 32px;
+        background: var(--accent-blue);
+        color: #fff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9rem;
+        font-weight: bold;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .badge-label {
+        position: absolute;
+        top: 14px;
+        padding: 6px 12px;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(8px);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        z-index: 4;
+        pointer-events: none;
+        }
+
+        .badge-left {
+        left: 14px;
+        }   
+
+        .badge-right {
+        right: 14px;
+        }
+
+        /* --- REGION ZOOM / MAGNIFIER LENS --- */
+        .img-zoom-container {
+        position: relative;
+        display: inline-block;
+        overflow: hidden;
+        cursor: crosshair;
+        }
+
+        .img-zoom-lens {
+         position: absolute;
+        border: 2px solid var(--accent-cyan);
+        border-radius: 50%;
+        width: 140px;
+        height: 140px;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.6), inset 0 0 10px rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+        display: none;
+        z-index: 99;
+        background-repeat: no-repeat;
+        background-color: #000;
+        }
+
+        /* ------------------------------------------------------------------
+           LEFT SIDEBAR NAVIGATION & CONTROLS
+        ------------------------------------------------------------------- */
+        .sidebar {
+            width: 290px;
+            background: var(--bg-sidebar);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border-right: 1px solid var(--border-dark);
+            padding: 24px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .sidebar-section-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .nav-item {
+            padding: 10px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item:hover {
+            color: var(--text-primary);
+            background-color: var(--bg-card-hover);
+        }
+
+        .radio-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid #64748b;
+            background-color: transparent;
+            display: inline-block;
+            transition: all 0.2s ease;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .nav-item.active {
+            color: var(--text-primary);
+            font-weight: 600;
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+        }
+
+        .nav-item.active .radio-dot {
+            border-color: var(--accent-cyan);
+            background-color: var(--accent-blue);
+            box-shadow: 0 0 10px var(--accent-blue);
+        }
+
+        .divider {
+            height: 1px;
+            background-color: var(--border-dark);
+            margin: 6px 0;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            font-weight: 500;
+        }
+
+        .slider-input {
+            width: 100%;
+            height: 6px;
+            background: #253352;
+            border-radius: 4px;
+            outline: none;
+            accent-color: var(--accent-blue);
+            cursor: pointer;
+        }
+
+        .select-input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.88rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* Theme & Color Picker Controls */
+        .theme-controls-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-dark);
+        }
+
+        .theme-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-picker-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-picker-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .color-input {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 26px;
+            height: 26px;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .color-input::-webkit-color-swatch {
+            border: 2px solid var(--border-dark);
+            border-radius: 50%;
+        }
+
+        .status-box {
+            background-color: var(--status-bg);
+            border: 1px solid var(--status-border);
+            padding: 12px 14px;
+            border-radius: 8px;
+            color: var(--status-text);
+            font-size: 0.82rem;
+            line-height: 1.4;
+            margin-top: auto;
+            backdrop-filter: blur(8px);
+        }
+
+        /* ------------------------------------------------------------------
+           MAIN CONTAINER & HEADER
+        ------------------------------------------------------------------- */
+        .main-content {
+            flex-grow: 1;
+            padding: 32px 40px;
+            overflow-y: auto;
+        }
+
+        .main-header {
+            font-size: 2.1rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            letter-spacing: -0.5px;
+        }
+
+        .sub-header {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-bottom: 28px;
+        }
+
+        /* Top Grid Layout */
+        .top-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .upload-card {
+            border: 2px dashed var(--border-dashed);
+            border-radius: 12px;
+            background: var(--bg-card);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            padding: 36px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: var(--shadow-glow);
+        }
+
+        .upload-card:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .upload-btn {
+            background-color: var(--accent-blue);
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 14px rgba(0, 136, 255, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .upload-btn:hover {
+            transform: scale(1.03);
+        }
+
+        .upload-hint {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+
+        .results-card {
+            background: var(--bg-card);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-dark);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-glow);
+        }
+
+        .results-card h3 {
+            margin-bottom: 12px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .results-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* ------------------------------------------------------------------
+           TAB CONTAINER & UNDERLINE ACCENT
+        ------------------------------------------------------------------- */
+        .tabs-header {
+            display: flex;
+            gap: 28px;
+            border-bottom: 1px solid var(--border-dark);
+            margin-bottom: 24px;
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            padding: 12px 0;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .content-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .content-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 18px;
+        }
+
+        /* Canvas Containers */
+        .image-container {
+            width: 100%;
+            height: 380px;
+            border-radius: 10px;
+            overflow: hidden;
+            background-color: #000;
+            border: 1px solid var(--border-dark);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .display-canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* JSON Audit Box */
+        .json-box {
+            background: var(--input-bg);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 18px;
+            font-family: monospace;
+            color: var(--accent-cyan);
+            white-space: pre-wrap;
+            font-size: 0.88rem;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        /* Chat Assistant */
+        .chat-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 20px;
+            height: 280px;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+            overflow-y: auto;
+            backdrop-filter: var(--glass-blur);
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex-grow: 1;
+            background: var(--input-bg);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .send-btn {
+            background-color: var(--accent-blue);
+            color: #ffffff;
+            border: none;
+            padding: 0 22px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .send-btn:hover {
+            opacity: 0.9;
+        }
+
+             /* CHAT ASSISTANT STYLES */
+        .chat-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 20px;
+            height: 280px;
+            margin-bottom: 12px;
+            color: var(--text-secondary);
+            overflow-y: auto;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex-grow: 1;
+            background: var(--input-bg);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .send-btn {
+            background-color: var(--accent-blue);
+            color: #ffffff;
+            border: none;
+            padding: 0 22px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .mic-btn {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            color: var(--text-primary);
+            padding: 0 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mic-btn.recording {
+            background-color: #ef4444;
+            color: #ffffff;
+            border-color: #ef4444;
+        }
+
+        /* Project Information Page */
+        .info-header {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .info-subtitle {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            margin-bottom: 36px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+
+        .info-section-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-text-p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 18px;
+        }
+
+        .info-list-bullets {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .info-list-bullets li {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            line-height: 1.5;
+            position: relative;
+            padding-left: 18px;
+        }
+
+        .info-list-bullets li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            top: -1px;
+            color: var(--accent-blue);
+            font-size: 1.3rem;
+        }
+
+        .info-list-bullets li strong, .info-list-ordered li strong {
+            color: var(--text-primary);
+        }
+
+        .info-list-ordered {
+            list-style: none;
+            counter-reset: info-counter;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .info-list-ordered li {
+            counter-increment: info-counter;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            line-height: 1.55;
+            position: relative;
+            padding-left: 24px;
+        }
+
+        .info-list-ordered li::before {
+            content: counter(info-counter) ".";
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--accent-blue);
+            font-weight: 700;
+        }
+
+        .info-divider {
+            height: 1px;
+            background-color: var(--border-dark);
+            margin: 20px 0 36px 0;
+        }
+
+        .comparison-table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid var(--border-dark);
+            background: var(--bg-card);
+            backdrop-filter: var(--glass-blur);
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .comparison-table th {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            font-weight: 600;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border-dark);
+            background: var(--bg-sidebar);
+        }
+
+        .comparison-table td {
+            padding: 16px 18px;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            border-bottom: 1px solid var(--border-dark);
+        }
+
+        .comparison-table tr td:first-child {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .page-view {
+            display: none;
+        }
+
+        .page-view.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div>
+            <div class="sidebar-section-title">📍 Navigation</div>
+            <ul class="nav-list">
+                <li class="nav-item active" onclick="switchPage('dashboard-page', this)">
+                    <span class="radio-dot"></span> 🔍 Forensic Dashboard
+                </li>
+                <li class="nav-item" onclick="switchPage('slider-page', this)">
+                    <span class="radio-dot"></span> ↔️ Image Comparison Slider
+                </li>
+                <li class="nav-item" onclick="switchPage('breakdown-page', this)">
+                    <span class="radio-dot"></span> 📊 Detailed Anomaly Breakdown
+                </li>
+                <li class="nav-item" onclick="switchPage('info-page', this)">
+                    <span class="radio-dot"></span> 📖 Project Information
+                </li>
+                <li class="nav-item" onclick="switchPage('3d-page', this)">
+                    <span class="radio-dot"></span> 🧬 3D Interactive Scan
+                </li>
+            </ul>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="sidebar-section-title">⚙️ Theme & Styling</div>
+            <div class="theme-controls-wrapper">
+                <button type="button" class="theme-btn" onclick="toggleTheme()" id="theme-toggle-btn">
+                    <i class="fa-solid fa-moon" id="theme-icon"></i> <span id="theme-text" style="font-size: 0.85rem;">Dark Mode</span>
+                </button>
+                <div class="color-picker-container">
+                    <span class="color-picker-label">Accent</span>
+                    <input type="color" id="accent-color-picker" class="color-input" value="#0088ff" oninput="changeAccentColor(this.value)">
+                </div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="sidebar-section-title">🛡️ Authentication Engine</div>
+            <div class="control-group" style="margin-bottom: 16px;">
+                <div class="control-label">
+                    <span>Forgery Detection Sensitivity</span>
+                    <span id="sensitivity-val">0.85</span>
+                </div>
+                <input type="range" min="0" max="1" step="0.01" value="0.85" class="slider-input" id="sensitivity-slider" oninput="updateSensitivity(this.value)">
+            </div>
+
+            <div class="control-group">
+                <div class="control-label"><span>Detection Mode</span></div>
+                <select class="select-input" id="detection-mode-select" onchange="updateDetectionMode(this.value)">
+                    <option value="Statistical Anomaly">Statistical Anomaly</option>
+                    <option value="Deep Representation Residual">Deep Representation Residual</option>
+                    <option value="Frequency Domain Analysis">Frequency Domain Analysis</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="status-box">
+            ⚠️ <b>System Status:</b> Protecting Clinical Data Integrity
+        </div>
+    </aside>
+
+    <main class="main-content">
+
+        <div id="dashboard-page" class="page-view active">
+            <h1 class="main-header">DeepfakeMed: Medical Image Forgery Detector</h1>
+            <p class="sub-header">Detecting pixel-level fabrications in diagnostic imaging</p>
+
+            <div class="top-grid">
+                <div class="upload-card" onclick="document.getElementById('file-upload').click()">
+                    <input type="file" id="file-upload" accept="image/*,.dcm" style="display: none;" onchange="handleFileUpload(event)">
+                    <button class="upload-btn"><i class="fa-solid fa-upload"></i> Upload Diagnostic Scan (DICOM/PNG)</button>
+                    <div class="upload-hint">200MB per file • PNG, JPG, DCM</div>
+                </div>
+
+                <div class="results-card">
+                    <h3>Forensic Analysis Results</h3>
+                    <p id="results-text">Upload an MRI or X-ray scan to perform deepfake verification.</p>
+                </div>
+            </div>
+
+        
+
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('tab-artifact', this)">📊 Statistical Artifact Mapping</button>
+                <button class="tab-btn" onclick="switchTab('tab-texture', this)">🖼️ Texture Inconsistency Map</button>
+                <button class="tab-btn" onclick="switchTab('tab-audit', this)">⚖️ Audit Trail</button>
+                <button class="tab-btn" onclick="switchTab('tab-assistant', this)">💬 Forensic Assistant</button>
+            </div>
+
+            <div id="tab-artifact" class="tab-content active">
+                <h2 class="content-title">Pixel Noise Distribution</h2>
+                <p class="content-subtitle">Residual Statistical Variance map across imaging tensor</p>
+                <div class="image-container">
+                    <canvas id="raw-canvas" class="display-canvas"></canvas>
+                </div>
+            </div>
+
+            <div id="tab-texture" class="tab-content">
+                <h2 class="content-title">Texture Inconsistency Map</h2>
+                <p class="content-subtitle">Highlighting high-frequency artifacts and synthesis edge inconsistencies</p>
+                <div class="image-container">
+                    <canvas id="mask-canvas" class="display-canvas"></canvas>
+                </div>
+            </div>
+
+            <div id="tab-audit" class="tab-content">
+                <h2 class="content-title">Audit Trail & Chain of Custody</h2>
+                <p class="content-subtitle">Cryptographic verification log</p>
+                <div class="json-box" id="audit-json"></div>
+            </div>
+
+            <div id="tab-assistant" class="tab-content">
+                <h2 class="content-title">Forensic Assistant</h2>
+                <p class="content-subtitle">Ask diagnostic questions regarding deepfake probabilities and spatial heatmaps</p>
+                <div class="chat-box" id="chat-box">
+                    <p>🤖 <i>System ready. Ask any question about the medical scan analysis.</i></p>
+                </div>
+                <div class="chat-input-wrapper">
+                    <button class="mic-btn" id="mic-btn" type="button" onclick="toggleVoiceInput()" title="Voice Input">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    <input type="text" class="chat-input" id="chat-input" placeholder="Ask a question about the diagnostic scan analysis..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+                    <button class="send-btn" type="button" onclick="sendChatMessage()">
+                        <i class="fa-solid fa-paper-plane"></i> Send</button>
+                </div>
+            </div>
+
+            
+            <div id="tab-slider" class="tab-content">
+                <h2 class="content-title">Interactive Image Comparison</h2>
+                <p class="content-subtitle">Drag the slider back and forth to compare raw input against the anomaly mask</p>
+                <div class="comparison-wrapper" id="slider-container-tab">
+                    <div class="badge-label badge-left">Anomaly Mask</div>
+                    <div class="badge-label badge-right">Raw Scan Input</div>
+                    <canvas id="canvas-base-tab" class="comparison-image"></canvas>
+                    <div class="comparison-overlay" id="overlay-tab">
+                        <canvas id="canvas-overlay-tab"></canvas>
+                    </div>
+                    <div class="slider-handle" id="handle-tab"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="3d-page" class="page-view">
+            <h1 class="main-header">DeepfakeMed: Medical Image Forgery Detector</h1>
+            <p class="sub-header">Detecting pixel-level fabrications in diagnostic imaging</p>
+            <h2 class="content-title">Interactive 3D Volumetric Scan</h2>
+            <p class="content-subtitle">Rotate, zoom, and inspect 3D volumetric representations of reconstructed medical scans.</p>
+
+            <div id="3d-viewport-container" style="position: relative; width: 100%; height: 500px; background: #050811; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-dark); margin-top: 20px;">
+                <div id="3d-canvas-holder" style="width: 100%; height: 100%;"></div>
+                
+                <div style="position: absolute; top: 15px; left: 15px; background: rgba(15, 22, 38, 0.85); backdrop-filter: blur(8px); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); color: #fff; z-index: 10;">
+                    <h4 style="margin: 0 0 8px 0; font-size: 0.85rem; color: var(--accent-cyan);">3D Scan Controls</h4>
+                    <button type="button" onclick="toggleAutoRotate()" class="send-btn" style="padding: 4px 10px; font-size: 0.75rem; display: inline-block;">Toggle Rotation</button>
+                    <button type="button" onclick="resetCameraView()" class="send-btn" style="padding: 4px 10px; font-size: 0.75rem; display: inline-block; margin-left: 5px; background-color: var(--bg-card);">Reset View</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="slider-page" class="page-view">
+            <h1 class="main-header">DeepfakeMed: Medical Image Forgery Detector</h1>
+            <p class="sub-header">Detecting pixel-level fabrications in diagnostic imaging</p>
+            <h2 class="content-title">Full-Screen Visual Comparison Slider</h2>
+            <p class="content-subtitle">Drag the split-screen control to inspect pixel-level differences between raw input and detected anomaly masks.</p>
+            <div class="comparison-wrapper" id="slider-container-page">
+                <div class="badge-label badge-left">Detected Anomaly Mask</div>
+                <div class="badge-label badge-right">Original Scan Input</div>
+                <canvas id="canvas-base-page" class="comparison-image"></canvas>
+                <div class="comparison-overlay" id="overlay-page">
+                    <canvas id="canvas-overlay-page"></canvas>
+                </div>
+                <div class="slider-handle" id="handle-page"></div>
+            </div>
+        </div>
+
+        <div id="breakdown-page" class="page-view">
+            <h1 class="main-header">DeepfakeMed: Medical Image Forgery Detector</h1>
+            <p class="sub-header">Detecting pixel-level fabrications in diagnostic imaging</p>
+            <h2 class="content-title">Detailed Anomaly Breakdown</h2>
+            <p class="content-subtitle">Quantitative breakdown of spatial regions exhibiting synthetic pattern generation.</p>
+            <div class="results-card" id="breakdown-card" style="margin-top: 20px;">
+                <p>No anomalous region clusters selected. Upload a scan to generate region metrics.</p>
+            </div>
+        </div>
+
+        <div id="info-page" class="page-view">
+            <h1 class="info-header">ℹ️ About DeepfakeMed</h1>
+            <p class="info-subtitle">Securing Medical Imaging and Clinical Trials against AI-Synthesized Tampering</p>
+
+            <div class="info-grid">
+                <div>
+                    <h2 class="info-section-title">🚨 The Problem of Medical Deepfakes</h2>
+                    <p class="info-text-p">
+                        In modern healthcare, digitizing diagnostic data has introduced new vulnerabilities. Advanced Generative Adversarial Networks (GANs) make it possible to inject or remove medical conditions (such as tumors, lesions, or fractures) from CT scans, MRIs, and X-rays with realistic precision.
+                    </p>
+                    <ul class="info-list-bullets">
+                        <li><strong>Clinical Trials:</strong> Bad actors could manipulate outcomes to bypass security controls or falsify drug efficacy.</li>
+                        <li><strong>Insurance Portals:</strong> Fraudulent claims can be submitted using synthetically modified patient data.</li>
+                        <li><strong>Patient Care:</strong> Swapped or corrupted diagnostics could lead to fatal misdiagnoses.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h2 class="info-section-title">🛠️ Our Technology Stack</h2>
+                    <p class="info-text-p">
+                        <strong>DeepfakeMed</strong> uses multi-layered forensic strategies to verify scan integrity:
+                    </p>
+                    <ol class="info-list-ordered">
+                        <li><strong>Statistical Noise Mapping:</strong> Examines high-frequency noise distributions across image pixels to spot blending boundaries left by GANs.</li>
+                        <li><strong>Texture Inconsistency Tracking:</strong> Analyzes micro-texture patterns where generative networks struggle to match realistic biological tissue structures.</li>
+                        <li><strong>Audit Trail Logging:</strong> Utilizes secure provenance trackers to confirm metadata origins and DICOM image headers.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="info-divider"></div>
+
+            <h2 class="info-section-title" style="margin-bottom: 24px;">🔍 Forensic Detection Core Comparison</h2>
+            
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Detection Strategy</th>
+                            <th>Targeted Attack Vector</th>
+                            <th>Analysis Speed</th>
+                            <th>Reliability</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Statistical Anomaly Map</td>
+                            <td>GAN Pixel blending traces</td>
+                            <td>Instant (&lt;1s)</td>
+                            <td>High (Detects subtle edits)</td>
+                        </tr>
+                        <tr>
+                            <td>Texture Heatmap Analysis</td>
+                            <td>Synthetic structure mismatches</td>
+                            <td>Moderate (1-3s)</td>
+                            <td>Very High (Spots fully AI-generated areas)</td>
+                        </tr>
+                        <tr>
+                            <td>Metadata Cryptography Check</td>
+                            <td>Unauthorized metadata injection</td>
+                            <td>Instant (&lt;1s)</td>
+                            <td>Absolute (Binary Pass/Fail)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- STATE & SETTINGS ---
+        let currentSensitivity = 0.85;
+        let currentMode = "Statistical Anomaly";
+        let isUploaded = false;
+        let uploadedImageObject = null;
+        let uploadedFileName = "";
+        let chatHistory = [];
+        let lastAnalysisResult = null;
+        let isRecordingVoice = false;
+        let speechRecognitionInstance = null;
+        let recognition = null;
+        let isListening = false;
+        let currentUploadedImageUrl = null;
+
+        // --- THEME SWITCHER & COLOR PICKER ---
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('dfm_theme', newTheme);
+
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            if (newTheme === 'light') {
+                icon.className = 'fa-solid fa-sun';
+                text.innerText = 'Light Mode';
+            } else {
+                icon.className = 'fa-solid fa-moon';
+                text.innerText = 'Dark Mode';
+            }
+        }
+
+        function changeAccentColor(color) {
+            document.documentElement.style.setProperty('--accent-blue', color);
+            localStorage.setItem('dfm_accent', color);
+        }
+
+        function loadSavedThemeAndColor() {
+            const savedTheme = localStorage.getItem('dfm_theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            if (savedTheme === 'light') {
+                icon.className = 'fa-solid fa-sun';
+                text.innerText = 'Light Mode';
+            } else {
+                icon.className = 'fa-solid fa-moon';
+                text.innerText = 'Dark Mode';
+            }
+
+            const savedAccent = localStorage.getItem('dfm_accent') || '#0088ff';
+            document.documentElement.style.setProperty('--accent-blue', savedAccent);
+            const picker = document.getElementById('accent-color-picker');
+            if (picker) picker.value = savedAccent;
+        }
+
+         // --- VOICE INPUT FUNCTIONALITY ---
+        function toggleVoiceInput() {
+            const micBtn = document.getElementById('mic-btn');
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+            if (!SpeechRecognition) {
+                alert("Speech recognition is not supported in this browser.");
+                return;
+            }
+
+            if (isRecordingVoice) {
+                if (speechRecognitionInstance) speechRecognitionInstance.stop();
+                isRecordingVoice = false;
+                micBtn.classList.remove('recording');
+                return;
+            }
+
+            speechRecognitionInstance = new SpeechRecognition();
+            speechRecognitionInstance.continuous = false;
+            speechRecognitionInstance.interimResults = false;
+
+            speechRecognitionInstance.onstart = function() {
+                isRecordingVoice = true;
+                micBtn.classList.add('recording');
+            };
+
+            speechRecognitionInstance.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('chat-input').value = transcript;
+            };
+
+            speechRecognitionInstance.onend = function() {
+                isRecordingVoice = false;
+                micBtn.classList.remove('recording');
+            };
+
+            speechRecognitionInstance.start();
+        }
+
+        // --- REGION ZOOM & PIXEL INSPECTOR (CANVAS & IMAGE SUPPORT) ---
+        function enableRegionZoom(elementId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+
+            let container = el.parentElement;
+            if (!container.classList.contains('img-zoom-container')) {
+            container = document.createElement('div');
+            container.className = 'img-zoom-container';
+            container.style.position = 'relative';
+            container.style.width = '100%';
+            container.style.height = '100%';
+            el.parentNode.insertBefore(container, el);
+            container.appendChild(el);
+        }
+
+            let lens = container.querySelector('.img-zoom-lens');
+            if (!lens) {
+            lens = document.createElement('div');
+            lens.className = 'img-zoom-lens';
+            container.appendChild(lens);
+        }
+
+        const zoomLevel = 2.5; // Magnification level
+
+        container.addEventListener('mouseenter', () => {
+        const dataUrl = el.tagName === 'CANVAS' ? el.toDataURL() : el.src;
+        if (!dataUrl) return;
+        lens.style.display = 'block';
+        lens.style.backgroundImage = `url('${dataUrl}')`;
+    });
+
+        container.addEventListener('mouseleave', () => {
+        lens.style.display = 'none';
+    });
+
+        container.addEventListener('mousemove', (e) => {
+        if (lens.style.display === 'none') return;
+
+        const rect = el.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        let y = e.clientY - rect.top;
+
+        if (x < 0) x = 0;
+        if (x > rect.width) x = rect.width;
+        if (y < 0) y = 0;
+        if (y > rect.height) y = rect.height;
+
+        const lensWidth = lens.offsetWidth;
+        const lensHeight = lens.offsetHeight;
+
+        lens.style.left = `${x - lensWidth / 2}px`;
+        lens.style.top = `${y - lensHeight / 2}px`;
+
+        lens.style.backgroundSize = `${rect.width * zoomLevel}px ${rect.height * zoomLevel}px`;
+        const bgX = (x * zoomLevel) - (lensWidth / 2);
+        const bgY = (y * zoomLevel) - (lensHeight / 2);
+        lens.style.backgroundPosition = `-${bgX}px -${bgY}px`;
+    });
+}
+
+        // --- NOISE CANVAS GENERATOR ---
+        function generateNoisePattern(canvasId, isMask = false) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            canvas.width = 900;
+            canvas.height = 420;
+
+            const imgData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imgData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const noise = Math.floor(Math.random() * 255);
+                if (isMask) {
+                    data[i] = Math.min(255, noise * 1.5 + 40);
+                    data[i + 1] = noise * 0.4;
+                    data[i + 2] = noise * 0.4;
+                } else {
+                    data[i] = noise;
+                    data[i + 1] = noise;
+                    data[i + 2] = noise;
+                }
+                data[i + 3] = 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        function refreshAllCanvases() {
+            if (isUploaded && uploadedImageObject) {
+                drawUploadedToAllCanvases();
+            } else {
+                generateNoisePattern('raw-canvas', false);
+                generateNoisePattern('mask-canvas', true);
+                generateNoisePattern('canvas-base-tab', false);
+                generateNoisePattern('canvas-overlay-tab', true);
+                generateNoisePattern('canvas-base-page', false);
+                generateNoisePattern('canvas-overlay-page', true);
+            }
+            updateOverlayCanvasSizes();
+        }
+
+        function drawUploadedToAllCanvases() {
+            const canvasIds = [
+                { id: 'raw-canvas', isMask: false },
+                { id: 'mask-canvas', isMask: true },
+                { id: 'canvas-base-tab', isMask: false },
+                { id: 'canvas-overlay-tab', isMask: true },
+                { id: 'canvas-base-page', isMask: false },
+                { id: 'canvas-overlay-page', isMask: true }
+            ];
+
+            canvasIds.forEach(item => {
+                const canvas = document.getElementById(item.id);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                canvas.width = 900;
+                canvas.height = 450;
+                ctx.drawImage(uploadedImageObject, 0, 0, canvas.width, canvas.height);
+
+                if (item.isMask) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.35)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+            });
+        }
+
+        function setupComparisonSlider(containerId, overlayId, handleId) {
+            const container = document.getElementById(containerId);
+            const overlay = document.getElementById(overlayId);
+            const handle = document.getElementById(handleId);
+            let isDragging = false;
+
+            function setPosition(x) {
+                const rect = container.getBoundingClientRect();
+                let position = x - rect.left;
+                if (position < 0) position = 0;
+                if (position > rect.width) position = rect.width;
+
+                const percentage = (position / rect.width) * 100;
+                overlay.style.width = `${percentage}%`;
+                handle.style.left = `${percentage}%`;
+            }
+
+            container.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                setPosition(e.clientX);
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                setPosition(e.clientX);
+            });
+
+            window.addEventListener('mouseup', () => { isDragging = false; });
+        }
+
+        function updateOverlayCanvasSizes() {
+            const pairs = [
+                { container: 'slider-container-tab', canvas: 'canvas-overlay-tab' },
+                { container: 'slider-container-page', canvas: 'canvas-overlay-page' }
+            ];
+
+            pairs.forEach(pair => {
+                const containerEl = document.getElementById(pair.container);
+                const canvasEl = document.getElementById(pair.canvas);
+                if (containerEl && canvasEl) {
+                    canvasEl.style.width = `${containerEl.clientWidth}px`;
+                    canvasEl.style.height = `${containerEl.clientHeight}px`;
+                }
+            });
+        }
+
+        // --- FILE UPLOAD & BACKEND VISION ANALYSIS INTEGRATION ---
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            uploadedFileName = file.name;
+
+            // Preview local image on canvases
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    uploadedImageObject = img;
+                    isUploaded = true;
+                    refreshAllCanvases();
+                    updateAuditTrail();
+                    
+                    // Add this call whenever a scan image is loaded/previewed:
+                    enableRegionZoom('raw-canvas'); // Replace 'preview-img' with your <img> tag's ID
+                    // 👈 PASTE THIS ONE LINE RIGHT HERE:
+                    update3DTextureWithImage(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            // Display loading indicators
+            const resultsText = document.getElementById('results-text');
+            const breakdownCard = document.getElementById('breakdown-card');
+
+            resultsText.innerHTML = `
+                ⏳ <b>Analyzing Scan:</b> ${file.name}<br>
+                <span style="font-size: 0.85rem; color: var(--accent-cyan);">Running Groq Vision AI forensic examination...</span>
+            `;
+
+            breakdownCard.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: var(--accent-cyan);">
+                    <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="margin-bottom: 10px;"></i>
+                    <p style="font-size: 1.05rem;">Performing multimodal forensic analysis on <b>${file.name}</b>...</p>
+                </div>
+            `;
+
+            // Call Groq Vision API via Flask backend `/api/analyze`
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    lastAnalysisResult = data;
+                    const prob = data.fake_probability;
+                    const isFake = prob >= 40;
+                    const statusColor = isFake ? '#ef4444' : '#10b981';
+                    const statusLabel = isFake ? 'HIGH RISK: Tampered / Deepfake Scan' : 'VERIFIED: Authentic Scan';
+
+                    resultsText.innerHTML = `
+                        <b style="color: ${statusColor};">${statusLabel}</b><br>
+                        <span style="font-size: 0.88rem; display: block; margin-top: 4px;"><b>Forgery Probability Score:</b> ${prob}%</span>
+                        <span style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 6px; display: block; line-height: 1.4;">${data.analysis_summary.substring(0, 160)}...</span>
+                    `;
+
+                    // Update Detailed Anomaly Breakdown Page
+                    renderBreakdownData(data);
+                    
+                    // Fetch technical report from `/api/explain`
+                    fetchTechnicalReport(file.name, data.analysis_summary);
+                } else {
+                    resultsText.innerHTML = `<span style="color: #ef4444;">❌ Analysis Error: ${data.error}</span>`;
+                    breakdownCard.innerHTML = `<p style="color: #ef4444;">❌ Error analyzing file: ${data.error}</p>`;
+                }
+            } catch (err) {
+                console.error(err);
+                resultsText.innerHTML = `<span style="color: #ef4444;">❌ Could not connect to AI backend. Ensure app.py is running.</span>`;
+                breakdownCard.innerHTML = `<p style="color: #ef4444;">❌ Server Connection Error. Ensure python app.py is running.</p>`;
+            }
+        }
+
+        function renderBreakdownData(data) {
+            const breakdownCard = document.getElementById('breakdown-card');
+            if (!breakdownCard) return;
+
+            const prob = data.fake_probability;
+            const isFake = prob >= 40;
+            const badgeColor = isFake ? '#ef4444' : '#10b981';
+            const badgeText = isFake ? 'High Risk - AI Tampering Detected' : 'Low Risk - Structural Integrity Intact';
+
+            breakdownCard.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <h3 style="font-size: 1.3rem; margin-bottom: 6px;">Diagnostic Target: ${data.filename}</h3>
+                        <span style="background: ${badgeColor}22; color: ${badgeColor}; border: 1px solid ${badgeColor}; padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 700; display: inline-block;">
+                            ${badgeText} (${prob}% Probability)
+                        </span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div style="background: var(--input-bg); border: 1px solid var(--border-dark); border-radius: 8px; padding: 16px;">
+                        <div style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;">FORGERY SCORE</div>
+                        <div style="font-size: 1.7rem; font-weight: 800; color: ${badgeColor};">${prob}%</div>
+                    </div>
+                    <div style="background: var(--input-bg); border: 1px solid var(--border-dark); border-radius: 8px; padding: 16px;">
+                        <div style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;">DETECTION SENSITIVITY</div>
+                        <div style="font-size: 1.7rem; font-weight: 800; color: var(--accent-cyan);">${currentSensitivity}</div>
+                    </div>
+                    <div style="background: var(--input-bg); border: 1px solid var(--border-dark); border-radius: 8px; padding: 16px;">
+                        <div style="font-size: 0.78rem; color: var(--text-secondary); font-weight: 600;">DETECTION ENGINE</div>
+                        <div style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin-top: 6px;">${currentMode}</div>
+                    </div>
+                </div>
+
+                <h4 style="color: var(--text-primary); margin-bottom: 12px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                    🔬 Multimodal Forensic AI Analysis
+                </h4>
+                <div style="background: var(--input-bg); border: 1px solid var(--border-dark); border-radius: 8px; padding: 18px; font-size: 0.92rem; line-height: 1.6; color: var(--text-primary); white-space: pre-wrap; margin-bottom: 24px;">
+${data.analysis_summary}
+                </div>
+
+                <div id="technical-report-section">
+                    <h4 style="color: var(--text-primary); margin-bottom: 12px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                        📄 Technical Report Breakdown
+                    </h4>
+                    <div id="technical-report-body" style="background: var(--input-bg); border: 1px solid var(--border-dark); border-radius: 8px; padding: 18px; font-size: 0.9rem; line-height: 1.6; color: var(--text-secondary);">
+                        <i class="fa-solid fa-spinner fa-spin" style="margin-right: 6px;"></i> Generating formal clinical technical report from Groq AI engine...
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchTechnicalReport(filename, context) {
+            const reportBody = document.getElementById('technical-report-body');
+            try {
+                const response = await fetch('/api/explain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        sensitivity: currentSensitivity,
+                        model_mode: currentMode,
+                        context: context
+                    })
+                });
+                const data = await response.json();
+                if (data.success && reportBody) {
+                    reportBody.style.color = "var(--text-primary)";
+                    reportBody.innerHTML = `<div style="white-space: pre-wrap;">${escapeHtml(data.report)}</div>`;
+                } else if (reportBody) {
+                    reportBody.innerText = "Could not generate technical report breakdown.";
+                }
+            } catch (err) {
+                if (reportBody) reportBody.innerText = "Error requesting technical report.";
+            }
+        }
+
+        // --- AI CHATBOT HANDLER ---
+        async function sendChatMessage() {
+            const inputEl = document.getElementById('chat-input');
+            const chatBox = document.getElementById('chat-box');
+            const message = inputEl.value.trim();
+            if (!message) return;
+
+            // Append user message
+            chatHistory.push({ role: 'user', content: message });
+            appendChatMessage('user', message);
+            inputEl.value = '';
+
+            // Show loading
+            const loadingId = 'loading-' + Date.now();
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = loadingId;
+            loadingDiv.style.marginBottom = '12px';
+            loadingDiv.style.color = 'var(--accent-cyan)';
+            loadingDiv.style.fontStyle = 'italic';
+            loadingDiv.innerHTML = `🤖 <i>Forensic Assistant is evaluating...</i>`;
+            chatBox.appendChild(loadingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages: chatHistory })
+                });
+                const data = await response.json();
+
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+
+                if (data.success) {
+                    chatHistory.push({ role: 'assistant', content: data.answer });
+                    appendChatMessage('assistant', data.answer);
+                } else {
+                    appendChatMessage('assistant', `⚠️ Chatbot Error: ${data.error}`);
+                }
+            } catch (err) {
+                const loadingEl = document.getElementById(loadingId);
+                if (loadingEl) loadingEl.remove();
+                appendChatMessage('assistant', `⚠️ Could not reach chat server. Ensure app.py backend is active.`);
+            }
+        }
+
+        function toggleMic() {
+            const micBtn = document.getElementById('mic-btn');
+            const chatInput = document.getElementById('chat-input');
+
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Speech Recognition is not supported in this browser.');
+                return;
+            }
+
+            if (isListening && recognition) {
+                recognition.stop();
+                isListening = false;
+                micBtn.classList.remove('recording');
+            } else {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+
+                recognition.onstart = () => {
+                    isListening = true;
+                    micBtn.classList.add('recording');
+                };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            chatInput.value = transcript;
+            isListening = false;
+            micBtn.classList.remove('recording');
+        };
+
+                recognition.onerror = (event) => {
+                    console.error('Speech Recognition Error:', event.error);
+                    isListening = false;
+                    micBtn.classList.remove('recording');
+                };
+
+                recognition.onend = () => {
+                    isListening = false;
+                    micBtn.classList.remove('recording');
+                };
+
+                recognition.start();
+            }
+        }
+
+        function appendChatMessage(sender, text) {
+            const chatBox = document.getElementById('chat-box');
+            const msgDiv = document.createElement('div');
+            msgDiv.style.marginBottom = '12px';
+            msgDiv.style.lineHeight = '1.5';
+            
+            if (sender === 'user') {
+                msgDiv.innerHTML = `<b style="color: var(--accent-cyan);">👤 You:</b> <span style="color: var(--text-primary);">${escapeHtml(text)}</span>`;
+            } else {
+                msgDiv.innerHTML = `<b style="color: var(--accent-blue);">🤖 Forensic Assistant:</b> <span style="color: var(--text-primary);">${escapeHtml(text)}</span>`;
+            }
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function updateSensitivity(val) {
+            currentSensitivity = val;
+            document.getElementById('sensitivity-val').innerText = val;
+            updateAuditTrail();
+        }
+
+        function updateDetectionMode(val) {
+            currentMode = val;
+            updateAuditTrail();
+        }
+
+        function updateAuditTrail() {
+            const auditData = {
+                "Scan Hash": isUploaded ? "a4f89d81e3b0c44298fc1c149afbf4c8996fb924" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e",
+                "Timestamp": new Date().toISOString(),
+                "Sensitivity Threshold": parseFloat(currentSensitivity),
+                "Mode": currentMode,
+                "Integrity Verdict": isUploaded ? (lastAnalysisResult ? `Analysis Complete (${lastAnalysisResult.fake_probability}% Fake)` : "Analysis Complete") : "Verification Pending Upload"
+            };
+            document.getElementById('audit-json').innerText = JSON.stringify(auditData, null, 4);
+        }
+
+        function switchPage(pageId, navEl) {
+            document.querySelectorAll('.page-view').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(pageId).classList.add('active');
+            navEl.classList.add('active');
+            updateOverlayCanvasSizes();
+            // Resize 3D canvas when entering the 3D page
+            if (pageId === '3d-page' && renderer && camera) {
+            const container = document.getElementById('3d-canvas-holder');
+            if (container) {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+    }
+}
+
+        function switchTab(tabId, tabEl) {
+            document.querySelectorAll('#dashboard-page .tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('#dashboard-page .tab-btn').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(tabId).classList.add('active');
+            tabEl.classList.add('active');
+            updateOverlayCanvasSizes();
+        }
+
+        window.addEventListener('load', () => {
+            loadSavedThemeAndColor();
+            refreshAllCanvases();
+            updateAuditTrail();
+
+            setupComparisonSlider('slider-container-tab', 'overlay-tab', 'handle-tab');
+            setupComparisonSlider('slider-container-page', 'overlay-page', 'handle-page');
+
+            init3DScanViewer();
+
+            window.addEventListener('resize', updateOverlayCanvasSizes);
+        });
+
+        // --- 3D INTERACTIVE SCAN VIEWER ---
+        let scene, camera, renderer, controls, scanMesh;
+        let isAutoRotating = true;
+
+        function init3DScanViewer() {
+            const container = document.getElementById('3d-canvas-holder');
+            if (!container) return;
+
+        // 1. Create Scene & Camera
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 0, 7);
+
+        // 2. WebGL Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        // 3. Mouse Controls
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // 4. Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0x38bdf8, 2, 50);
+        pointLight.position.set(5, 5, 5);
+        scene.add(pointLight);
+
+       // 5. 3D Volumetric Mesh (Original Blue Sphere)
+        const geometry = new THREE.IcosahedronGeometry(2.5, 4);
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x0088ff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.75
+        });
+
+        scanMesh = new THREE.Mesh(geometry, material);
+        scene.add(scanMesh);
+
+        // 6. Animation Loop
+        function animate() {
+        requestAnimationFrame(animate);
+        if (isAutoRotating && scanMesh) scanMesh.rotation.y += 0.005;
+        controls.update();
+        renderer.render(scene, camera);
+        }
+        animate();
+    }
+
+        function toggleAutoRotate() { 
+        isAutoRotating = !isAutoRotating; 
+    }
+
+        function resetCameraView() { 
+        if (camera && controls) { 
+        camera.position.set(0, 0, 7); 
+        controls.reset(); 
+        } 
+    }
+
+   // --- UPDATE 3D VIEWPORT WITH UPLOADED SCAN TEXTURE ---
+        function update3DTextureWithImage(imgObject) {
+            if (!scanMesh || !scene) return;
+
+            // 1. Create a 3D texture from the uploaded image
+            const texture = new THREE.Texture(imgObject);
+            texture.needsUpdate = true;
+
+            // 2. Change the 3D shape from the default sphere to a 3D Plane
+            if (scanMesh.geometry) scanMesh.geometry.dispose();
+            scanMesh.geometry = new THREE.PlaneGeometry(4, 4);
+
+            // 3. Apply the image texture to the 3D shape
+            scanMesh.material = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide
+            });
+
+            // 4. Reset position/camera
+            scanMesh.rotation.set(0, 0, 0);
+            if (camera) camera.position.set(0, 0, 5);
+        }
+    </script>
+</body>
+</html>
