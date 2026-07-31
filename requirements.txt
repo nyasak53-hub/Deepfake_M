@@ -3,3 +3,4 @@ groq
 Pillow
 gunicorn
 python-dotenv
+Flask-Cors
