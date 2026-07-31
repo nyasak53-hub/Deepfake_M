@@ -2,3 +2,4 @@ flask
 groq
 Pillow
 gunicorn
+python-dotenv
